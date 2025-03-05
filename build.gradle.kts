@@ -14,7 +14,6 @@ repositories {
 dependencies {
     testImplementation(kotlin("test"))
     implementation("org.fxmisc.richtext:richtextfx:0.11.0")
-    implementation("org.openjfx:javafx-controls:17.0.1")
 }
 
 javafx {
