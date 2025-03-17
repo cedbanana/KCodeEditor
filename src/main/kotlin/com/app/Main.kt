@@ -6,6 +6,7 @@ import javafx.collections.FXCollections
 import javafx.geometry.Orientation
 import javafx.scene.Scene
 import javafx.scene.control.*
+import javafx.scene.input.MouseButton
 import javafx.scene.layout.BorderPane
 import javafx.scene.layout.HBox
 import javafx.stage.Stage
@@ -39,7 +40,9 @@ class CodeEditor: Application() {
         borderPane.bottom = statusLabel
 
         codeArea.paragraphGraphicFactory = LineNumberFactory.get(codeArea)
-
+        codeArea.textProperty().addListener { _, _, newValue ->
+            codeArea.setStyleSpans(0,DoHighlight(newValue))
+        }
 
         listView.cellFactory = Callback {
             object : ListCell<OutputLine>() {
@@ -51,16 +54,23 @@ class CodeEditor: Application() {
                         val hbox = HBox().apply { spacing = 5.0 }
                         val label = Label(item!!.text)
                         hbox.children.add(label)
-                        if (item.isError && item.line != null && item.column != null) {
-                            val link = Hyperlink("GO TO ")
-                            link.setOnAction {
-                                val position = codeArea.getAbsolutePosition(item.line - 1, item.column - 1);
-                                codeArea.moveTo(position)
-                                codeArea.requestFocus()
-                            }
-                            hbox.children.add(link)
-                        }
                         graphic = hbox
+                        setOnMouseClicked { event->
+
+                            if(event.button==MouseButton.PRIMARY && event.isShortcutDown && item.isError && item.line != null){
+                                if(item.column!=null){
+                                    val position = codeArea.getAbsolutePosition(item.line - 1, item.column - 1);
+                                    codeArea.moveTo(position)
+
+                                } else {
+                                    val position = codeArea.getAbsolutePosition(item.line - 1, 0)
+                                    codeArea.moveTo(position)
+
+                                }
+                                codeArea.requestFocus()
+                                event.consume()
+                            }
+                        }
                     }
                 }
             }
@@ -69,7 +79,7 @@ class CodeEditor: Application() {
         Submitbutton.setOnAction { runScript() }
 
         val scene = Scene(borderPane, 800.0, 600.0)
-        scene.stylesheets.add("./style.css")
+        scene.stylesheets.add(javaClass.getResource("/style.css").toExternalForm())
         primaryStage.scene = scene
         primaryStage.title = "Code Editor"
         primaryStage.show()
@@ -77,9 +87,9 @@ class CodeEditor: Application() {
     }
 
     private fun DoHighlight(text: String): StyleSpans<Collection<String>> {
-        val keywords = setOf("fun", "val", "var", "if", "for", "while", "class", "interface", "import")
+        val keywords = setOf("fun", "val", "var", "if", "for", "while", "class", "interface", "import", "print")
         val keywordPattern = "\\b(" + keywords.joinToString("|") + ")\\b"
-        val pattern = Pattern.compile("?<KEYWORD>$keywordPattern")
+        val pattern = Pattern.compile("(?<KEYWORD>" + keywordPattern + ")")
         val matcher = pattern.matcher(text)
         val spansBuilder = StyleSpansBuilder<Collection<String>>()
         var lastKw = 0
@@ -99,6 +109,7 @@ class CodeEditor: Application() {
 
         val scriptFile =File.createTempFile("script", ".kts")
         scriptFile.writeText(codeArea.text)
+        scriptFile.deleteOnExit()
         val processBuilder = ProcessBuilder("kotlinc", "-script", scriptFile.absolutePath)
         try{
             val process = processBuilder.start()
@@ -120,18 +131,31 @@ class CodeEditor: Application() {
 
             thread{
                 val errorReader = BufferedReader(InputStreamReader(process.errorStream))
-                val errorPattern = Pattern.compile("script\\.kts:(\\d+):(\\d+): error: (.+)")
+                val normalErrorPattern = Pattern.compile(".*\\.kts:(\\d+):(\\d+): error: (.+)")
+                val exceptionErrorPattern = Pattern.compile(".*\\.kts:(\\d+)")
                 var line: String?
                 while(process.isAlive || errorReader.ready()) {
                     line=errorReader.readLine()
+                    System.out.println("[ERROR]: $line")
                     if (line != null) {
-                        val matcher = errorPattern.matcher(line)
+                        val matcher = normalErrorPattern.matcher(line)
+                        val exceptionmatcher = exceptionErrorPattern.matcher(line)
                         if (matcher.matches()) {
                             val lineNum=matcher.group(1).toInt()
                             val colNum=matcher.group(2).toInt()
                             val errorMsg = matcher.group(3)
+
                             Platform.runLater {
-                                outputList.add(OutputLine("error: $errorMsg at $lineNum:$colNum", false, lineNum,colNum))
+                                outputList.add(OutputLine("error: $errorMsg at $lineNum:$colNum", true, lineNum,colNum))
+                            }
+                        } else if (exceptionmatcher.find()) { // look for the substring
+                            val lineNum=exceptionmatcher.group(1).toInt()
+                            Platform.runLater {
+                                outputList.add(OutputLine(line, true, lineNum, null))
+                            }
+                        } else {
+                            Platform.runLater {
+                                outputList.add(OutputLine(line, true, null, null))
                             }
                         }
                     }
@@ -146,7 +170,7 @@ class CodeEditor: Application() {
 
                 }
             }
-//TODO fix text highlighting(regex issue??? )  , fix error messages now showing up(" am I that bad at regex ?? ") , add red line under the text where the column is present.
+//TODO add red line under the text where the column is present.
         } catch (e :Exception) {
             Platform.runLater {
                 outputList.add(OutputLine("Failed to run script: ${e.message}", false, null, null))
