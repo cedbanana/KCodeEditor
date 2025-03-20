@@ -1,3 +1,7 @@
 .keyword{
     -fx-fill:pink
 }
+.error {
+     -rtfx-underline-color: red;
+     -rtfx-underline-width: 2px;
+ }
