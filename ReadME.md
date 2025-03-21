@@ -1,6 +1,3 @@
-Below is a README file tailored for your Kotlin-based code editor project. It includes a project description, key features, requirements, installation steps, and usage instructions to help users set up and run the application.
-
----
 
 # Code Editor Application
 
